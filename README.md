@@ -22,6 +22,9 @@ This project demonstrates how to perform **Cohort Analysis**, **Customer Retenti
 | `customer_id`| Unique customer identifier         | Integer      |
 | `created_at` | Order creation timestamp           | Timestamp    |
 
+## Dataset Link
+https://drive.google.com/file/d/1_CyLkI5J3wOXmnlaHP3Fha8XMv_n24j4/view?usp=sharing
+
 ## Project Structure
 
 1. **Cohort Analysis** (Monthly)  
@@ -38,7 +41,7 @@ This project demonstrates how to perform **Cohort Analysis**, **Customer Retenti
 ### 1. Monthly Cohort Analysis
 
 ```sql
--- Step 1: Identify each customer's first order month (cohort)
+-- Step 1️: Find each customer's first order month (their cohort)
 WITH first_order AS (
     SELECT
         customer_id,
@@ -47,7 +50,8 @@ WITH first_order AS (
     GROUP BY customer_id
 ),
 
--- Step 2: Get monthly order activity
+
+-- Step 2️: Clean sales table with monthly order info
 clean_sales AS (
     SELECT
         customer_id,
@@ -55,21 +59,20 @@ clean_sales AS (
     FROM sales
 )
 
--- Step 3: Join and count active customers per cohort per month
-SELECT 
-    first_order_month AS cohort_month,
-    order_month,
-    COUNT(DISTINCT customer_id) AS active_customers
-FROM (
+  
+SELECT first_order_month, order_month, count(distinct customer_id)
+FROM
+  (
     SELECT
-        cs.customer_id,
-        cs.order_month,
-        fo.first_order_month
-    FROM clean_sales cs
-    LEFT JOIN first_order fo ON cs.customer_id = fo.customer_id
-) x
-GROUP BY 1, 2
-ORDER BY 1, 2;
+      order_month,
+      clean_sales.customer_id AS customer_id,
+      first_order_month
+    FROM
+      clean_sales
+      LEFT JOIN first_order ON clean_sales.customer_id = first_order.customer_id
+  ) x
+
+group by 1, 2;
 ```
 
 **Visualization in Metabase**
@@ -79,68 +82,84 @@ ORDER BY 1, 2;
 
 ```sql
 -- Customers active in December 2010
-WITH active_dec AS (
+WITH active_month AS (
     SELECT 
-        customer_id,
-        COUNT(id) AS dec_orders
+        customer_id, 
+        COUNT(id) AS orders
     FROM sales
-    WHERE created_at BETWEEN '2010-12-01' AND '2010-12-31 23:59:59'
-    GROUP BY customer_id
+    WHERE created_at BETWEEN '2010-12-01' AND '2010-12-31'
+    GROUP BY 1
 ),
 
 -- Customers active in January 2011
-active_jan AS (
+Inactive_month AS (
     SELECT 
-        customer_id,
-        COUNT(id) AS jan_orders
+        customer_id, 
+        COUNT(id) AS orders
     FROM sales
-    WHERE created_at BETWEEN '2011-01-01' AND '2011-01-31 23:59:59'
-    GROUP BY customer_id
+    WHERE created_at BETWEEN '2011-01-01' AND '2011-01-31'
+    GROUP BY 1
 ),
 
--- Retained = present in both months
-retained AS (
-    SELECT
-        ad.customer_id,
-        ad.dec_orders,
-        aj.jan_orders
-    FROM active_dec ad
-    INNER JOIN active_jan aj ON ad.customer_id = aj.customer_id
+-- Retained customers (present in both months)
+final AS (
+    SELECT 
+        am.customer_id AS active_month_customers,
+        am.orders AS active_month_orders,
+        im.customer_id AS inactive_month_customers,
+        im.orders AS inactive_month_orders
+    FROM active_month am
+    LEFT JOIN Inactive_month im 
+        ON am.customer_id = im.customer_id
+    WHERE im.customer_id IS NOT NULL
 )
 
+-- Total retained customers
 SELECT
-    COUNT(*) AS retained_customers,
-    COUNT(*)::float / (SELECT COUNT(*) FROM active_dec) * 100 AS retention_rate_pct
-FROM retained;
+    COUNT(active_month_customers) AS Total_customers_of_Dec,
+    COUNT(inactive_month_customers) AS Total_customers_of_Jan
+FROM final;
 ```
 
 ### 3. Churn Analysis (Dec 2010 → Jan 2011)
 
 ```sql
 -- Customers active in December 2010
-WITH active_dec AS (
+WITH active_month AS (
     SELECT 
-        customer_id,
-        COUNT(id) AS dec_orders
+        customer_id, 
+        COUNT(id) AS orders
     FROM sales
-    WHERE created_at BETWEEN '2010-12-01' AND '2010-12-31 23:59:59'
-    GROUP BY customer_id
+    WHERE created_at BETWEEN '2010-12-01' AND '2010-12-31'
+    GROUP BY 1
 ),
 
 -- Customers active in January 2011
-active_jan AS (
+Inactive_month AS (
     SELECT 
-        customer_id
+        customer_id, 
+        COUNT(id) AS orders
     FROM sales
-    WHERE created_at BETWEEN '2011-01-01' AND '2011-01-31 23:59:59'
-    GROUP BY customer_id
+    WHERE created_at BETWEEN '2011-01-01' AND '2011-01-31'
+    GROUP BY 1
+),
+
+-- Churned customers (missing in January)
+final AS (
+    SELECT 
+        am.customer_id AS active_month_customers,
+        am.orders AS active_month_orders,
+        im.customer_id AS inactive_month_customers,
+        im.orders AS inactive_month_orders
+    FROM active_month am
+    LEFT JOIN Inactive_month im 
+        ON am.customer_id = im.customer_id
+    WHERE im.customer_id IS NULL
 )
 
--- Churned = active in Dec but NOT in Jan
+-- Total churned customers
 SELECT
-    COUNT(ad.customer_id) AS churned_customers,
-    COUNT(ad.customer_id)::float / (SELECT COUNT(*) FROM active_dec) * 100 AS churn_rate_pct
-FROM active_dec ad
-LEFT JOIN active_jan aj ON ad.customer_id = aj.customer_id
-WHERE aj.customer_id IS NULL;
-``
+    COUNT(active_month_customers) AS Total_customers_of_Dec,
+    COUNT(inactive_month_customers) AS Total_customers_of_Jan
+FROM final;
+
