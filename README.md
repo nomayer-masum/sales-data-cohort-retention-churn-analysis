@@ -73,7 +73,7 @@ ORDER BY 1, 2;
 ```
 
 **Visualization in Metabase**
-
+![Cohort Pivot](https://github.com/nomayer-masum/sales-data-cohort-retention-churn-analysis/blob/main/Cohort%20Pivot.png)
 
 ### 2. Retention Analysis (Dec 2010 → Jan 2011)
 
